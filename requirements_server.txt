@@ -1,0 +1,4 @@
+numpy==1.26.4
+opencv-python-headless==4.11.0.86
+timm==0.5.4
+tqdm==4.67.1

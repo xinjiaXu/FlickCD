@@ -46,7 +46,7 @@ class Trainer(object):
         self.model = FlickCD(window_size, stride, load_pretrained)
         self.model = self.model.to(self.device)
 
-        self.model_save_path = args.savedir + self.TITLE
+        self.model_save_path = os.path.join(args.savedir, self.TITLE)
         self.log_dir = self.model_save_path + '/Logs/'
 
         if not os.path.exists(self.model_save_path):
@@ -81,14 +81,20 @@ class Trainer(object):
         ])
 
         generator = torch.Generator().manual_seed(args.seed)
-        self.train_dataset = makeDataset(self.args.train_dataset_path, self.args.train_name_list, self.trainTransform)
-        self.train_dataloader = DataLoader(self.train_dataset, batch_size=self.args.batch_size, shuffle=True, generator=generator, num_workers=16, drop_last=False)
+        self.train_dataset = makeDataset(self.args.train_dataset_path, self.args.train_name_list,
+                                         self.trainTransform, image_dir_a=args.image_dir_a,
+                                         image_dir_b=args.image_dir_b, label_dir=args.label_dir)
+        self.train_dataloader = DataLoader(self.train_dataset, batch_size=self.args.batch_size, shuffle=True, generator=generator, num_workers=args.num_workers, drop_last=False)
 
-        self.val_dataset = makeDataset(self.args.val_dataset_path, self.args.val_name_list, self.valTransform)
-        self.val_dataloader = DataLoader(self.val_dataset, batch_size=self.args.batch_size, num_workers=16, drop_last=False)
+        self.val_dataset = makeDataset(self.args.val_dataset_path, self.args.val_name_list,
+                                       self.valTransform, image_dir_a=args.image_dir_a,
+                                       image_dir_b=args.image_dir_b, label_dir=args.label_dir)
+        self.val_dataloader = DataLoader(self.val_dataset, batch_size=self.args.batch_size, num_workers=args.num_workers, drop_last=False)
 
-        self.test_dataset = makeDataset(self.args.test_dataset_path, self.args.test_name_list, self.valTransform)
-        self.test_dataloader = DataLoader(self.test_dataset, batch_size=self.args.batch_size, num_workers=16, drop_last=False)
+        self.test_dataset = makeDataset(self.args.test_dataset_path, self.args.test_name_list,
+                                        self.valTransform, image_dir_a=args.image_dir_a,
+                                        image_dir_b=args.image_dir_b, label_dir=args.label_dir)
+        self.test_dataloader = DataLoader(self.test_dataset, batch_size=self.args.batch_size, num_workers=args.num_workers, drop_last=False)
 
         self.best_f1 = 0.0
         self.best_epoch = 0
@@ -222,7 +228,7 @@ class Trainer(object):
 
     def test(self):
         print("----------Starting Test!----------")
-        model_file_name = self.model_save_path + '/best_model.pth'
+        model_file_name = self.args.test_checkpoint or os.path.join(self.model_save_path, 'best_model.pth')
         state_dict = torch.load(model_file_name, map_location=self.device, weights_only=False)
         self.model.load_state_dict(state_dict)
         self.model.eval()
@@ -247,16 +253,18 @@ def main():
     # set data path
     parser.add_argument('--data_name', type=str)
     parser.add_argument('--train_dataset_path', type=str)
-    parser.add_argument('--train_list_path', type=str)
-    parser.add_argument('--train_name_list', type=list)
+    parser.add_argument('--train_list_path', type=str, default=None)
     parser.add_argument('--val_dataset_path', type=str)
-    parser.add_argument('--val_list_path', type=str)
-    parser.add_argument('--val_name_list', type=list)
+    parser.add_argument('--val_list_path', type=str, default=None)
     parser.add_argument('--test_dataset_path', type=str)
-    parser.add_argument('--test_list_path', type=str)
-    parser.add_argument('--test_name_list', type=list)
+    parser.add_argument('--test_list_path', type=str, default=None)
     parser.add_argument('--resume', type=str)
     parser.add_argument('--savedir', default='./result/', type=str)
+    parser.add_argument('--image_dir_a', type=str, default='A')
+    parser.add_argument('--image_dir_b', type=str, default='B')
+    parser.add_argument('--label_dir', type=str, default='label')
+    parser.add_argument('--num_workers', type=int, default=16)
+    parser.add_argument('--test_checkpoint', type=str, default=None)
     
     # Choose GPU
     parser.add_argument('--gpu_id', type=int, default=0)
@@ -274,15 +282,22 @@ def main():
     args = parser.parse_args()
 
     # load the name list of the data
-    with open(args.train_list_path, "r") as f:
-        data_name_list = [data_name.strip() for data_name in f]
-    args.train_name_list = data_name_list
-    with open(args.val_list_path, "r") as f:
-        val_name_list = [data_name.strip() for data_name in f]
-    args.val_name_list = val_name_list
-    with open(args.test_list_path, "r") as f:
-        test_name_list = [data_name.strip() for data_name in f]
-    args.test_name_list = test_name_list
+    def read_names(list_path, split_path):
+        if list_path is None:
+            split_name = os.path.basename(os.path.normpath(split_path))
+            dataset_root = os.path.dirname(os.path.normpath(split_path))
+            candidates = [os.path.join(dataset_root, split_name + '.txt')]
+            candidates.append(os.path.join(os.path.dirname(dataset_root), split_name + '.txt'))
+            list_path = next((candidate for candidate in candidates if os.path.isfile(candidate)), None)
+        if list_path:
+            with open(list_path, "r", encoding="utf-8") as name_file:
+                return [name.strip() for name in name_file if name.strip()]
+        label_path = os.path.join(split_path, args.label_dir)
+        return sorted(name for name in os.listdir(label_path) if not name.startswith('.'))
+
+    args.train_name_list = read_names(args.train_list_path, args.train_dataset_path)
+    args.val_name_list = read_names(args.val_list_path, args.val_dataset_path)
+    args.test_name_list = read_names(args.test_list_path, args.test_dataset_path)
 
     set_seed(args.seed)
 
