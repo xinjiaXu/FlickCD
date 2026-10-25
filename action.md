@@ -24,12 +24,14 @@ git pull --ff-only
 ## Environment and pretrained weights
 
 ```bash
+cd /home/xxj/code/DINOCLIP_comparative_test/FlickCD
+wget -O model/repvit_m0_6.pth https://github.com/THU-MIG/RepViT/releases/download/v1.0/repvit_m0_6_distill_300e.pth
 bash setup_server_env.sh
 conda activate flickcd-rs
 bash prepare_server_data.sh /home/xxj/Data
 ```
 
-The RepViT encoder checkpoint `model/repvit_m0_6.pth` is included in the repository. No separate full-model weight download is required for training. Four released evaluation checkpoints are included under `checkpoint/` for SYSU, WHU, LEVIR-CD+, and CDD.
+The training launcher requires `model/repvit_m0_6.pth`. This file is ignored by Git, so download the official RepViT-M0.6 ImageNet checkpoint before training. The download URL is published by the [THU-MIG RepViT repository](https://github.com/THU-MIG/RepViT). The original FlickCD evaluation checkpoints are also excluded from Git; train LEVIR-CD first, then test with the checkpoint produced by that run.
 
 ## Train
 

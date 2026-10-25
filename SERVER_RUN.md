@@ -11,7 +11,13 @@ bash setup_server_env.sh
 conda activate flickcd-rs
 ```
 
-The README asks for Python 3.8 and `timm==0.5.4`. The server setup uses Python 3.10 and PyTorch 2.7.1/CUDA 12.8 for the RTX 5090; `requirements_server.txt` keeps the required timm version and pins NumPy/OpenCV to compatible wheels. Training uses the repository-bundled `model/repvit_m0_6.pth` encoder weights.
+The README asks for Python 3.8 and `timm==0.5.4`. The server setup uses Python 3.10 and PyTorch 2.7.1/CUDA 12.8 for the RTX 5090; `requirements_server.txt` keeps the required timm version and pins NumPy/OpenCV to compatible wheels. Before training, download the official RepViT-M0.6 ImageNet checkpoint to the ignored path expected by FlickCD:
+
+```bash
+wget -O model/repvit_m0_6.pth https://github.com/THU-MIG/RepViT/releases/download/v1.0/repvit_m0_6_distill_300e.pth
+```
+
+The `.pth` file is excluded from Git and must be fetched separately after cloning.
 
 ## Data lists and folder layout
 
