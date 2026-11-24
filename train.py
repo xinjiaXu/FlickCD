@@ -41,10 +41,17 @@ class Trainer(object):
         elif args.data_name == 'LEVIR+':
             window_size = (4, 8, 8)
             stride = (4, 8, 8)
-        if args.mode == 'train':
-            load_pretrained = True
+        pretrained_path = args.pretrained
+        if args.mode == 'train' and pretrained_path.lower() != 'none':
+            if os.path.isfile(pretrained_path):
+                load_pretrained = True
+            else:
+                print(f"RepViT checkpoint not found: {pretrained_path}; training from random initialization.")
 
-        self.model = FlickCD(window_size, stride, load_pretrained)
+        self.model = FlickCD(
+            window_size, stride, load_pretrained,
+            pretrained_path=pretrained_path if load_pretrained else None,
+        )
         self.model = self.model.to(self.device)
 
         self.model_save_path = os.path.join(args.savedir, self.TITLE)
@@ -267,7 +274,6 @@ class Trainer(object):
 
                 output, output2, output3 = self.model(pre_img, post_img)
                 pred = (output > 0.5).squeeze(1).cpu().numpy().astype(np.uint8)
-                label_np = gt.cpu().numpy().astype(np.uint8)
                 for index in range(pred.shape[0]):
                     name = metadata['name'][index]
                     height = int(metadata['height'][index])
@@ -281,11 +287,14 @@ class Trainer(object):
                             self.evaluator.add_batch(stitched_label, stitched_pred)
                         stitched_name = name
                         stitched_pred = np.zeros((height, width), dtype=np.uint8)
-                        stitched_label = np.zeros((height, width), dtype=np.uint8)
+                        label_path = os.path.join(data_loader.dataset.data_path,
+                                                 data_loader.dataset.label_dir, name)
+                        stitched_label = cv2.imread(label_path, cv2.IMREAD_GRAYSCALE)
+                        if stitched_label is None or stitched_label.shape != (height, width):
+                            raise ValueError(f'Could not read original-resolution label: {label_path}')
+                        stitched_label = np.ceil(stitched_label / 255).astype(np.uint8)
                     pred_patch = cv2.resize(pred[index], (region_w, region_h), interpolation=cv2.INTER_NEAREST)
-                    label_patch = cv2.resize(label_np[index], (region_w, region_h), interpolation=cv2.INTER_NEAREST)
                     stitched_pred[top:top + region_h, left:left + region_w] = pred_patch
-                    stitched_label[top:top + region_h, left:left + region_w] = label_patch
 
             if stitched_name is not None:
                 self.evaluator.add_batch(stitched_label, stitched_pred)
@@ -337,6 +346,8 @@ def main():
     parser.add_argument('--label_dir', type=str, default='label')
     parser.add_argument('--num_workers', type=int, default=16)
     parser.add_argument('--test_checkpoint', type=str, default=None)
+    parser.add_argument('--pretrained', type=str, default='./model/repvit_m0_6.pth',
+                        help="RepViT encoder checkpoint for training, or 'none' for random initialization")
     
     # Choose GPU
     parser.add_argument('--gpu_id', type=int, default=0)

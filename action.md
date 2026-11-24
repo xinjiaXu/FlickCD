@@ -21,17 +21,21 @@ git switch reproduce
 git pull --ff-only
 ```
 
-## Environment and pretrained weights
+## Environment and optional pretrained weights
 
 ```bash
 cd /home/xxj/code/DINOCLIP_comparative_test/FlickCD
-wget -O model/repvit_m0_6.pth https://github.com/THU-MIG/RepViT/releases/download/v1.0/repvit_m0_6_distill_300e.pth
 bash setup_server_env.sh
 conda activate flickcd-rs
 bash prepare_server_data.sh /home/xxj/Data
 ```
 
-The training launcher requires `model/repvit_m0_6.pth`. This file is ignored by Git, so download the official RepViT-M0.6 ImageNet checkpoint before training. The download URL is published by the [THU-MIG RepViT repository](https://github.com/THU-MIG/RepViT). The original FlickCD evaluation checkpoints are also excluded from Git; train LEVIR-CD first, then test with the checkpoint produced by that run.
+Training uses `model/repvit_m0_6.pth` when present. To train without downloading it, set `PRETRAINED=none`; the model then initializes the RepViT backbone randomly. This is a scratch-trained configuration, not the ImageNet-pretrained setup. To use the pretrained setup, download the official RepViT-M0.6 checkpoint from the [THU-MIG RepViT repository](https://github.com/THU-MIG/RepViT). Evaluation checkpoints remain excluded from Git; train a dataset first, then test with that run's output.
+
+```bash
+mkdir -p model
+wget -O model/repvit_m0_6.pth https://github.com/THU-MIG/RepViT/releases/download/v1.0/repvit_m0_6_distill_300e.pth
+```
 
 ## Train
 

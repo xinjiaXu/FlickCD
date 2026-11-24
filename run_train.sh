@@ -8,6 +8,7 @@ num_workers="${NUM_WORKERS:-8}"
 patch_size="${PATCH_SIZE:-256}"
 batch_size="${BATCH_SIZE:-32}"
 epochs="${EPOCHS:-}"
+pretrained="${PRETRAINED:-$repo_root/model/repvit_m0_6.pth}"
 
 if [[ $# -ne 1 ]]; then
   printf 'Usage: %s {levircd|levircdplus|cdd|whucd|sysucd}\n' "$0" >&2
@@ -35,11 +36,6 @@ for split in train val test; do
   done
 done
 
-if [[ ! -f "$repo_root/model/repvit_m0_6.pth" ]]; then
-  printf 'Bundled RepViT pretrained weights are missing: %s\n' "$repo_root/model/repvit_m0_6.pth" >&2
-  exit 1
-fi
-
 work_dir="$repo_root/FlickCD_work_dirs/$1"
 mkdir -p "$work_dir"
 cd "$repo_root"
@@ -59,5 +55,6 @@ python train.py \
   --num_workers "$num_workers" \
   --batch_size "$batch_size" \
   --patch_size "$patch_size" \
+  --pretrained "$pretrained" \
   --learning_rate "$run_lr" \
   --epochs "$run_epochs"

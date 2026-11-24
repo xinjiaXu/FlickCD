@@ -263,23 +263,24 @@ class Decoder(nn.Module):
 
         return mask_p2, mask_p3, mask_p4
 
-def load_pretrained_model(model):
-    checkpoint = torch.load('./model/repvit_m0_6.pth', weights_only=False)
+def load_pretrained_model(model, checkpoint_path='./model/repvit_m0_6.pth'):
+    checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
     ckpt = checkpoint['model']
     msg = model.load_state_dict(ckpt, strict=False)
     # print(msg)
 
 class FlickCD(nn.Module):
-    def __init__(self, window_size:tuple, stride:tuple, load_pretrained=True):
+    def __init__(self, window_size:tuple, stride:tuple, load_pretrained=True,
+                 pretrained_path='./model/repvit_m0_6.pth'):
         super(FlickCD, self).__init__()
         assert len(window_size) == 3 and len(stride) == 3
         self.backbone = repvit_m0()
         if load_pretrained is True:
             print("load_pretrained is True")
-            print("Loading the checkpoint of Backbone!")
-            load_pretrained_model(self.backbone)
+            print(f"Loading the checkpoint of Backbone: {pretrained_path}")
+            load_pretrained_model(self.backbone, pretrained_path)
         else:
-            print("load_pretrained is False!")
+            print("RepViT backbone starts from random initialization.")
         self.dim = 80
         self.ucm = EnhancedDiffModule([self.dim // 2, self.dim, self.dim * 2], self.dim)
         self.decoder = Decoder(self.dim, window_size, stride)
