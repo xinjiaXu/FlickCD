@@ -23,7 +23,7 @@ If the checkpoint is absent, training continues from random initialization. Set 
 
 ## Data lists and folder layout
 
-The code will use `train.txt`, `val.txt`, and `test.txt` when they are beside their split folders. For LEVIR-CD+ it also checks one directory above `cut_data`. If a list is absent, the code falls back to a sorted list of filenames in that split's label folder. It never creates or modifies the dataset lists.
+The code will use `train.txt`, `val.txt`, and `test.txt` when they are beside their split folders. For LEVIR-CD+ it also checks one directory above `cut_data`. Lists can contain one filename/path per line or whitespace-separated rows of paired A/B/label paths; paired rows are normalized to the shared basename. If a list is absent, the code falls back to sorted filenames in that split's label folder. It never creates or modifies the dataset lists.
 
 | Key | Dataset root | Image A | Image B | Label | Model window name |
 | --- | --- | --- | --- | --- | --- |

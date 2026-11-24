@@ -374,8 +374,32 @@ def main():
             candidates.append(os.path.join(os.path.dirname(dataset_root), split_name + '.txt'))
             list_path = next((candidate for candidate in candidates if os.path.isfile(candidate)), None)
         if list_path:
+            names = []
             with open(list_path, "r", encoding="utf-8") as name_file:
-                return [name.strip() for name in name_file if name.strip()]
+                for line_number, line in enumerate(name_file, start=1):
+                    fields = line.strip().split()
+                    if not fields:
+                        continue
+                    basenames = [os.path.basename(field.rstrip('/\\')) for field in fields]
+                    unique_names = list(dict.fromkeys(basenames))
+                    if len(unique_names) == 1:
+                        names.append(unique_names[0])
+                        continue
+
+                    paired_names = [
+                        name for name in unique_names
+                        if all(os.path.isfile(os.path.join(split_path, folder, name))
+                               for folder in (args.image_dir_a, args.image_dir_b, args.label_dir))
+                    ]
+                    if len(paired_names) == 1:
+                        names.append(paired_names[0])
+                        continue
+
+                    raise ValueError(
+                        f"Cannot resolve paired filename from {list_path}:{line_number}: "
+                        f"{line.rstrip()}"
+                    )
+            return names
         label_path = os.path.join(split_path, args.label_dir)
         return sorted(name for name in os.listdir(label_path) if not name.startswith('.'))
 
