@@ -3,6 +3,7 @@ import random
 import torch
 import argparse
 import numpy as np
+import cv2
 import torch.optim as optim
 import torch.nn.functional as F
 import Transforms as myTransforms
@@ -59,6 +60,7 @@ class Trainer(object):
 
         self.lr = args.learning_rate
         self.epoch = args.epochs
+        self.patch_size = args.patch_size
         self.optim = optim.AdamW(self.model.parameters(), self.lr, weight_decay=args.weight_decay)
 
         mean = [0.406, 0.456, 0.485, 0.406, 0.456, 0.485]
@@ -83,24 +85,32 @@ class Trainer(object):
         generator = torch.Generator().manual_seed(args.seed)
         self.train_dataset = makeDataset(self.args.train_dataset_path, self.args.train_name_list,
                                          self.trainTransform, image_dir_a=args.image_dir_a,
-                                         image_dir_b=args.image_dir_b, label_dir=args.label_dir)
+                                         image_dir_b=args.image_dir_b, label_dir=args.label_dir,
+                                         patch_size=self.patch_size)
         self.train_dataloader = DataLoader(self.train_dataset, batch_size=self.args.batch_size, shuffle=True, generator=generator, num_workers=args.num_workers, drop_last=False)
 
         self.val_dataset = makeDataset(self.args.val_dataset_path, self.args.val_name_list,
                                        self.valTransform, image_dir_a=args.image_dir_a,
-                                       image_dir_b=args.image_dir_b, label_dir=args.label_dir)
+                                       image_dir_b=args.image_dir_b, label_dir=args.label_dir,
+                                       patch_size=self.patch_size)
         self.val_dataloader = DataLoader(self.val_dataset, batch_size=self.args.batch_size, num_workers=args.num_workers, drop_last=False)
 
         self.test_dataset = makeDataset(self.args.test_dataset_path, self.args.test_name_list,
                                         self.valTransform, image_dir_a=args.image_dir_a,
-                                        image_dir_b=args.image_dir_b, label_dir=args.label_dir)
+                                        image_dir_b=args.image_dir_b, label_dir=args.label_dir,
+                                        patch_size=self.patch_size)
         self.test_dataloader = DataLoader(self.test_dataset, batch_size=self.args.batch_size, num_workers=args.num_workers, drop_last=False)
+        self.logger.info(
+            'Dataset samples after on-the-fly patching: train=%d val=%d test=%d patch_size=%d',
+            len(self.train_dataset), len(self.val_dataset), len(self.test_dataset), self.patch_size
+        )
 
         self.best_f1 = 0.0
         self.best_epoch = 0
         self.best_f1_train = 0.0
         self.best_epoch_train = 0
         self.start_epoch = 0
+        self.top_models = []
 
     def training(self):
         self.logger.info('Net: ' + self.TITLE)
@@ -116,6 +126,9 @@ class Trainer(object):
             self.best_epoch = checkpoint['best_epoch']
             self.best_f1_train = checkpoint['best_f1_train']
             self.best_epoch_train = checkpoint['best_epoch_train']
+            self.top_models = checkpoint.get('top_models', [])
+            if not self.top_models and os.path.isfile(os.path.join(self.model_save_path, 'best_model.pth')):
+                self.top_models = [{'score': float(self.best_f1), 'epoch': int(self.best_epoch), 'rank': 1}]
             self.model.load_state_dict(checkpoint['state_dict'])
             self.optim.load_state_dict(checkpoint['optimizer'])
             print("=> loaded checkpoint '{}' (epoch {})"
@@ -152,8 +165,47 @@ class Trainer(object):
                     print('%d/%d, Epoch:%d, mean_loss:%f' % (iter+1, total_step, e+1, mean_loss / 5))
                     mean_loss = 0
 
-                if((iter + 1) == total_step // 2) or (iter + 1) == total_step:
+                if (iter + 1) == total_step:
                     self.val_phase(e, 'val')
+
+    def save_top_models(self, f1_score, epoch):
+        entries = []
+        for entry in self.top_models:
+            rank_path = os.path.join(
+                self.model_save_path,
+                'best_model.pth' if entry['rank'] == 1 else f"best_model_{entry['rank']}.pth",
+            )
+            if os.path.isfile(rank_path):
+                entries.append({
+                    'score': float(entry['score']),
+                    'epoch': int(entry['epoch']),
+                    'state_dict': torch.load(rank_path, map_location='cpu', weights_only=True),
+                })
+        entries.append({
+            'score': float(f1_score),
+            'epoch': int(epoch + 1),
+            'state_dict': {key: value.detach().cpu().clone()
+                           for key, value in self.model.state_dict().items()},
+        })
+        entries.sort(key=lambda item: (-item['score'], item['epoch']))
+        selected = entries[:3]
+
+        for rank, entry in enumerate(selected, start=1):
+            filename = 'best_model.pth' if rank == 1 else f'best_model_{rank}.pth'
+            target_path = os.path.join(self.model_save_path, filename)
+            temporary_path = target_path + '.tmp'
+            torch.save(entry['state_dict'], temporary_path)
+            os.replace(temporary_path, target_path)
+            entry['rank'] = rank
+            del entry['state_dict']
+
+        for rank in range(len(selected) + 1, 4):
+            stale_path = os.path.join(self.model_save_path, f'best_model_{rank}.pth')
+            if os.path.exists(stale_path):
+                os.remove(stale_path)
+        self.top_models = selected
+        self.best_f1 = selected[0]['score']
+        self.best_epoch = selected[0]['epoch']
 
     def val_phase(self, epoch, type):
         f1_train = self.evaluator_train.Pixel_F1_score()
@@ -174,21 +226,21 @@ class Trainer(object):
         self.model.eval()
         rec, pre, oa, f1_score, iou, kc = self.validation(type)
 
-        if f1_score > self.best_f1:
-            torch.save(self.model.state_dict(),
-                       os.path.join(self.model_save_path, 'best_model.pth'))
-            self.best_f1 = f1_score
-            self.best_epoch = epoch + 1
+        self.save_top_models(f1_score, epoch)
 
-        torch.save({
+        checkpoint = {
             'epoch': epoch + 1,
             'best_f1': self.best_f1,
             'best_epoch': self.best_epoch,
             'best_f1_train': self.best_f1_train,
             'best_epoch_train': self.best_epoch_train,
+            'top_models': self.top_models,
             'state_dict': self.model.state_dict(),
             'optimizer': self.optim.state_dict(),
-        }, self.model_save_path + '/checkpoint.pth.tar')
+        }
+        checkpoint_path = self.model_save_path + '/checkpoint.pth.tar'
+        torch.save(checkpoint, checkpoint_path + '.tmp')
+        os.replace(checkpoint_path + '.tmp', checkpoint_path)
 
         self.logger.info(
             'Epoch:[{}/{}]  val_Pre={:.4f}  val_Rec={:.4f}  val_OA={:.4f}  val_F1={:.4f}  val_IoU={:.4f}  val_KC={:.4f} best_F1:[{:.4f}/{}]'.format(
@@ -205,18 +257,38 @@ class Trainer(object):
         torch.cuda.empty_cache()
 
         with torch.no_grad():
+            stitched_name = None
+            stitched_pred = None
+            stitched_label = None
             for iter, data in enumerate(tqdm(data_loader)):
-                pre_img, post_img, gt, _ = data
+                pre_img, post_img, gt, metadata = data
                 pre_img = pre_img.to(self.device).float()
                 post_img = post_img.to(self.device).float()
-                label = gt.unsqueeze(dim=1).to(self.device).float()
 
                 output, output2, output3 = self.model(pre_img, post_img)
-                pred = torch.where(output > 0.5, torch.ones_like(output), torch.zeros_like(output)).long()
+                pred = (output > 0.5).squeeze(1).cpu().numpy().astype(np.uint8)
+                label_np = gt.cpu().numpy().astype(np.uint8)
+                for index in range(pred.shape[0]):
+                    name = metadata['name'][index]
+                    height = int(metadata['height'][index])
+                    width = int(metadata['width'][index])
+                    top = int(metadata['top'][index])
+                    left = int(metadata['left'][index])
+                    region_h = int(metadata['crop_height'][index])
+                    region_w = int(metadata['crop_width'][index])
+                    if name != stitched_name:
+                        if stitched_name is not None:
+                            self.evaluator.add_batch(stitched_label, stitched_pred)
+                        stitched_name = name
+                        stitched_pred = np.zeros((height, width), dtype=np.uint8)
+                        stitched_label = np.zeros((height, width), dtype=np.uint8)
+                    pred_patch = cv2.resize(pred[index], (region_w, region_h), interpolation=cv2.INTER_NEAREST)
+                    label_patch = cv2.resize(label_np[index], (region_w, region_h), interpolation=cv2.INTER_NEAREST)
+                    stitched_pred[top:top + region_h, left:left + region_w] = pred_patch
+                    stitched_label[top:top + region_h, left:left + region_w] = label_patch
 
-                pred = pred.cpu().numpy()
-                label = label.cpu().numpy()
-                self.evaluator.add_batch(label, pred)
+            if stitched_name is not None:
+                self.evaluator.add_batch(stitched_label, stitched_pred)
 
         f1_score = self.evaluator.Pixel_F1_score()
         oa = self.evaluator.Pixel_Accuracy()
@@ -272,6 +344,7 @@ def main():
     # Hyper-parameter
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--input_size', type=int, default=256)
+    parser.add_argument('--patch_size', type=int, default=0)
     parser.add_argument('--epochs', type=int, default=200)
     parser.add_argument('--learning_rate', type=float, default=1e-4)
     parser.add_argument('--weight_decay', type=float, default=1e-2)

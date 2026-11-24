@@ -49,9 +49,11 @@ bash run_train.sh whucd
 bash run_train.sh sysucd
 ```
 
-The wrappers use the per-dataset values shown in the upstream `trainAndtest.sh` examples: SYSU 100 epochs/lr `5e-4`, WHU 100/lr `2e-4`, LEVIR+ 200/lr `5e-4`, and CDD 250/lr `5e-4`. LEVIR-CD uses the LEVIR+ values as a 256x256 dataset not listed in the upstream examples. Other defaults stay as in `train.py`: batch size 32, input size 256, weight decay `1e-2`, and seed 2333. Workers default to 8 on the server; choose a different GPU with `GPU_ID=1`.
+The wrappers use dataset settings: SYSU 100 epochs/lr `5e-4`, WHU 100/lr `2e-4`, LEVIR+ 200/lr `5e-4`, and CDD 250/lr `5e-4`. LEVIR-CD uses LEVIR+ window settings. Other defaults are batch size 32, input size 256, weight decay `1e-2`, and seed 2333. Override with `EPOCHS`, `BATCH_SIZE`, `NUM_WORKERS`, `GPU_ID`, or `PATCH_SIZE`.
 
-Training evaluates validation data during the run and tests the best-F1 checkpoint at the end. It saves `best_model.pth` and resumable `checkpoint.pth.tar` in `FlickCD_work_dirs/<key>/FlickCD/`. A later training run resumes that checkpoint automatically when present.
+LEVIR-CD and LEVIR-CD-PLUS are tiled into aligned 256x256 patches on read. Test predictions are stitched into each original image canvas before metrics are calculated. No crop files are generated and source files remain unchanged; dimensions larger than `PATCH_SIZE` must be divisible by it.
+
+Training validates once per epoch and retains the top three models by validation F1 (`best_model.pth`, `best_model_2.pth`, and `best_model_3.pth`). The ranking is included in the resume checkpoint. One `checkpoint.pth.tar` is overwritten each epoch. Training tests `best_model.pth` at completion. `GPU_ID` selects a physical GPU and is mapped to logical `cuda:0`.
 
 ## Test
 
@@ -66,3 +68,5 @@ bash run_test.sh levircd FlickCD_work_dirs/levircd/FlickCD/best_model.pth
 ```
 
 The test command reports the model's precision, recall, OA, F1, IoU, and kappa metrics.
+
+Test batch defaults to 4. Set `TEST_BATCH_SIZE` to lower it if memory is constrained.

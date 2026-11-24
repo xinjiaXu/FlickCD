@@ -5,6 +5,8 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 data_root="${DATA_ROOT:-/home/xxj/Data}"
 gpu_id="${GPU_ID:-0}"
 num_workers="${NUM_WORKERS:-8}"
+patch_size="${PATCH_SIZE:-256}"
+batch_size="${TEST_BATCH_SIZE:-4}"
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
   printf 'Usage: %s {levircd|levircdplus|cdd|whucd|sysucd} [CHECKPOINT]\n' "$0" >&2
@@ -54,6 +56,8 @@ python train.py \
   --image_dir_b "$image_b" \
   --label_dir "$label_dir" \
   --savedir "$work_dir" \
-  --gpu_id "$gpu_id" \
+  --gpu_id 0 \
   --num_workers "$num_workers" \
+  --batch_size "$batch_size" \
+  --patch_size "$patch_size" \
   --test_checkpoint "$checkpoint"

@@ -43,9 +43,13 @@ bash run_train.sh whucd
 bash run_train.sh sysucd
 ```
 
-The wrappers use the values in the repository's `trainAndtest.sh` examples: SYSU 100 epochs/lr `5e-4`, WHU 100/lr `2e-4`, LEVIR-CD+ 200/lr `5e-4`, and CDD 250/lr `5e-4`. LEVIR-CD uses the LEVIR+ model-window setup because there is no separate LEVIR-CD entry in the source. Other defaults are batch 32, input 256, weight decay `1e-2`, seed 2333; workers default to 8. `GPU_ID=1` selects GPU 1.
+The wrappers use dataset settings: SYSU 100 epochs/lr `5e-4`, WHU 100/lr `2e-4`, LEVIR-CD+ 200/lr `5e-4`, and CDD 250/lr `5e-4`; LEVIR-CD uses the LEVIR+ window setup. Set `EPOCHS`, `BATCH_SIZE`, `NUM_WORKERS`, `GPU_ID`, and `PATCH_SIZE` to override runtime values.
 
-The train command evaluates test after training. For standalone testing, run:
+LEVIR-CD and LEVIR-CD-PLUS are tiled into aligned 256x256 patches while reading for training, validation, and testing. Test predictions are stitched into each original image canvas before pixel metrics are computed. No crop files are created and source data is unchanged. Large inputs must be divisible by `PATCH_SIZE`.
+
+Training validates once per epoch and retains only the top three validation-F1 models: `best_model.pth`, `best_model_2.pth`, and `best_model_3.pth`. Ranking persists on resume. One `checkpoint.pth.tar` is overwritten for resuming. At completion FlickCD tests `best_model.pth`. `GPU_ID` chooses a physical GPU; the process uses logical `cuda:0` after restricting visibility.
+
+For standalone testing, run:
 
 ```bash
 bash run_test.sh levircd
@@ -56,3 +60,5 @@ bash run_test.sh sysucd
 ```
 
 For LEVIR-CD, train first; the repository has no bundled LEVIR-CD checkpoint. Pass a checkpoint explicitly when needed, for example `bash run_test.sh levircd FlickCD_work_dirs/levircd/FlickCD/best_model.pth`.
+
+Test batches default to 4; adjust with `TEST_BATCH_SIZE` if GPU memory is limited.

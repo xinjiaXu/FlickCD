@@ -5,6 +5,9 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 data_root="${DATA_ROOT:-/home/xxj/Data}"
 gpu_id="${GPU_ID:-0}"
 num_workers="${NUM_WORKERS:-8}"
+patch_size="${PATCH_SIZE:-256}"
+batch_size="${BATCH_SIZE:-32}"
+epochs="${EPOCHS:-}"
 
 if [[ $# -ne 1 ]]; then
   printf 'Usage: %s {levircd|levircdplus|cdd|whucd|sysucd}\n' "$0" >&2
@@ -19,6 +22,9 @@ case "$1" in
   sysucd) dataset_root="$data_root/SYSU_CD"; data_name="SYSU"; run_lr="5e-4"; run_epochs=100; image_a="time1"; image_b="time2"; label_dir="label" ;;
   *) printf 'Unknown dataset key: %s\n' "$1" >&2; exit 2 ;;
 esac
+if [[ -n "$epochs" ]]; then
+  run_epochs="$epochs"
+fi
 
 for split in train val test; do
   for folder in "$image_a" "$image_b" "$label_dir"; do
@@ -49,7 +55,9 @@ python train.py \
   --image_dir_b "$image_b" \
   --label_dir "$label_dir" \
   --savedir "$work_dir" \
-  --gpu_id "$gpu_id" \
+  --gpu_id 0 \
   --num_workers "$num_workers" \
+  --batch_size "$batch_size" \
+  --patch_size "$patch_size" \
   --learning_rate "$run_lr" \
   --epochs "$run_epochs"
